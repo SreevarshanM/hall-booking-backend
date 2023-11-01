@@ -1,45 +1,59 @@
-import student from "../models/StudentModel.js"
-import bcrypt from "bcryptjs"
-import { createError } from "../utils/error.js";
-import jwt from "jsonwebtoken"
+import asyncHandler from "express-async-handler";
+import User from "../models/StudentModel.js";
+import { generateToken } from "../config/genrateToken.js";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+// const JWT_SECRET=process.env.JWT_SECRET;
+export const registerUser = asyncHandler(async (req, res) => {
+  const { Student_ID, Student_Name, Department, Password, Email } = req.body;
+  if (!Student_ID || !Student_Name || !Password || !Department || !Email) {
+    return res.status(400).json({ msg: "Please fill all required field" });
+    // throw new Error( "Please fill all required field")
+  }
+  const userExist = await User.findOne({ Email });
+  if (userExist) {
+    return res.status(401).json({ msg: "User with this email already exist." });
+    // throw new Error("User with this email already exist.")
+  }
+  const salt = await bcrypt.genSalt(10);
+  const secpass = await bcrypt.hash(Password, salt);
 
-export const register = async (req,res,next) => {
-    try{
+  const user = await User.create({
+    Student_ID,
+    Email,
+    Student_Name,
+    Password: secpass,
+    Department,
+  });
+  if (user) {
+    res.status(201).json({
+      _id: user._id,
+      Student_ID: user.Student_ID,
+      Student_Name: user.Student_Name,
+      Department: user.Department,
+      Email: user.Email,
+      token: generateToken(user._id),
+    });
+  } else {
+    return res.status(401).json({ msg: "failed to create user." });
+  }
+});
 
-        var salt = bcrypt.genSaltSync(10);
-        var hash = bcrypt.hashSync(req.body.Password, salt);
-
-
-        const newStudent = new student({
-            Student_ID: req.body.Student_ID,
-            Student_Name: req.body.Student_Name,
-            Department: req.body.Department,
-            Email: req.body.Email,
-            Password: hash
-        })
-
-        await newStudent.save()
-        res.status(200).send("Student Registered Successfully") //success register
-    }catch(err){
-        next(err)
-    }
-}
-
-export const login = async (req,res,next) => {
-    try{
-        const userStudent = await student.findOne({Student_ID: req.body.Student_ID});
-        if (!userStudent) next(createError(404, "User Not Found"));
-
-        const isPasswordCorrect = await bcrypt.compare(req.body.Password, userStudent.Password);
-        if (!isPasswordCorrect) 
-            return next(createError(400, "Password not correct"));
-
-        const token = jwt.sign({id:userStudent._id, })
-
-        const { Email, Password, ...otherDetails } = userStudent._doc; //IMPORTANT
-
-        res.status(200).json({...otherDetails}) //login done. Hide Password and Email in return Json. IMPORTANT
-    }catch(err){
-        next(err) 
-    }
-}
+export const authUser = asyncHandler(async (req, res) => {
+  const { Email, Password } = req.body;
+  const user = await User.findOne({ Email });
+  const passwordCompare = await bcrypt.compare(Password, user.Password);
+  if (user && passwordCompare) {
+    res.status(200).json({
+      _id: user._id,
+      Student_ID: user.Student_ID,
+      Student_Name: user.Student_Name,
+      Department: user.Department,
+      Email: user.Email,
+      token: generateToken(user._id),
+    });
+  } else {
+    return res.status(401).json({ msg: "Invalid credentials." });
+    //    throw new Error("Invalid credentials.");
+  }
+});
